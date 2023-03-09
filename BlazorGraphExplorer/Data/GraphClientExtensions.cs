@@ -3,10 +3,13 @@ using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.AspNetCore.Components.WebAssembly.Authentication;
+using Azure.Core;
+using MsalAuth = Microsoft.AspNetCore.Components.WebAssembly.Authentication;
 using Microsoft.Authentication.WebAssembly.Msal.Models;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Graph;
+using Microsoft.Kiota.Abstractions;
+using KiotaAuth = Microsoft.Kiota.Abstractions.Authentication;
 
 /// <summary>
 /// Adds services and implements methods to use Microsoft Graph SDK.
@@ -21,7 +24,7 @@ internal static class GraphClientExtensions
     /// <returns></returns>
     public static IServiceCollection AddMicrosoftGraphClient(this IServiceCollection services, params string[] scopes)
     {
-        services.Configure<RemoteAuthenticationOptions<MsalProviderOptions>>(options =>
+        services.Configure<MsalAuth.RemoteAuthenticationOptions<MsalProviderOptions>>(options =>
         {
             foreach (var scope in scopes)
             {
@@ -29,11 +32,15 @@ internal static class GraphClientExtensions
             }
         });
 
-        services.AddScoped<IAuthenticationProvider, GraphAuthenticationProvider>();
-        services.AddScoped<IHttpProvider, HttpClientHttpProvider>(sp => new HttpClientHttpProvider(new HttpClient()));
+        services.AddScoped<KiotaAuth.IAuthenticationProvider, GraphAuthenticationProvider>();
+        //services.AddHttpClient();
+        services.AddHttpClient(nameof(GraphClientExtensions));
+
+
         services.AddScoped(sp => new GraphServiceClient(
-              sp.GetRequiredService<IAuthenticationProvider>(),
-              sp.GetRequiredService<IHttpProvider>()));
+                  sp.GetRequiredService<IHttpClientFactory>().CreateClient(nameof(GraphClientExtensions)),
+                  sp.GetRequiredService<KiotaAuth.IAuthenticationProvider>())
+        );
         return services;
     }
 
@@ -41,54 +48,26 @@ internal static class GraphClientExtensions
     /// Implements IAuthenticationProvider interface.
     /// Tries to get an access token for Microsoft Graph.
     /// </summary>
-    private class GraphAuthenticationProvider : IAuthenticationProvider
+    private class GraphAuthenticationProvider : KiotaAuth.IAuthenticationProvider
     {
-        public GraphAuthenticationProvider(IAccessTokenProvider provider)
+        public GraphAuthenticationProvider(MsalAuth.IAccessTokenProvider provider)
         {
             Provider = provider;
         }
 
-        public IAccessTokenProvider Provider { get; }
+        public MsalAuth.IAccessTokenProvider Provider { get; }
 
-        public async Task AuthenticateRequestAsync(HttpRequestMessage request)
+        public async Task AuthenticateRequestAsync(RequestInformation request, Dictionary<string, object>? additionalAuthenticationContext = null, CancellationToken cancellationToken = default)
         {
-            var result = await Provider.RequestAccessToken(new AccessTokenRequestOptions()
+            var result = await Provider.RequestAccessToken(new MsalAuth.AccessTokenRequestOptions()
             {
-                Scopes = new[] { "https://graph.microsoft.com/User.Read" }
+                // TODO: Get correct scopes based on request url
+                Scopes = new[] { "https://graph.microsoft.com/User.Read" },
             });
-
             if (result.TryGetToken(out var token))
             {
-                request.Headers.Authorization ??= new AuthenticationHeaderValue("Bearer", token.Value);
+                request.Headers.Add("Authorization", $"Bearer {token.Value}");
             }
-        }
-    }
-
-    private class HttpClientHttpProvider : IHttpProvider
-    {
-        private readonly HttpClient _client;
-
-        public HttpClientHttpProvider(HttpClient client)
-        {
-            _client = client;
-        }
-
-        public ISerializer Serializer { get; } = new Serializer();
-
-        public TimeSpan OverallTimeout { get; set; } = TimeSpan.FromSeconds(300);
-
-        public void Dispose()
-        {
-        }
-
-        public Task<HttpResponseMessage> SendAsync(HttpRequestMessage request)
-        {
-            return _client.SendAsync(request);
-        }
-
-        public Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, HttpCompletionOption completionOption, CancellationToken cancellationToken)
-        {
-            return _client.SendAsync(request, completionOption, cancellationToken);
         }
     }
 }
