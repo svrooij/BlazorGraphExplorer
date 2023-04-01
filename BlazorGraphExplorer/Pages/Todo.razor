@@ -1,0 +1,262 @@
+@page "/todo"
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.Graph
+@using Microsoft.Graph.Models;
+@inject Microsoft.Graph.GraphServiceClient GraphServiceClient
+@inject Microsoft.AspNetCore.Components.WebAssembly.Authentication.IAccessTokenProvider TokenProvider
+@attribute [Authorize]
+
+<h3>Todo tasks</h3>
+<p>This page allows you to add and delete some items in your todo list, with and without batching, just to show de difference.</p>
+
+<div class="row mb-5">
+    <div class="col">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Test settings</h5>
+                
+                <form>
+
+                    <div class="mb-3">
+                        <label for="listName" class="form-label">Todo List name</label>
+                        <div class="input-group">
+                            <input value="@ListName"
+                                   @onchange="@((ChangeEventArgs __e) => ListName = __e?.Value?.ToString())" name="listName" class="form-control" placeholder="Todo List name" />
+                            @if (ListId is null)
+                            {
+                                <button class="btn btn-primary" type="button" @onclick="CreateList">Create</button>
+                            }
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="listId" class="form-label">List ID</label>
+                        <div class="input-group">
+                            <input value="@ListId" name="listId" class="form-control" placeholder="Todo List ID" readonly="readonly" disabled="disabled" />
+                            @if (ListId is null)
+                            {
+                                <button class="btn btn-primary" type="button" @onclick="LoadListId">Load</button>
+                            }
+                        </div>
+                    </div>
+                    <div>
+                        <label for="numberOfItems" class="form-label">Number of items to create</label>
+                        <input type="number" value="@NumberOfItems" name="numberOfItems" class="form-control" min="5" max="100"
+                               @onchange="@((ChangeEventArgs __e) => {NumberOfItems = int.Parse(__e.Value?.ToString() ?? "10"); Finished = false; })" />
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    @if (ListId is not null)
+    {
+        <div class="col">
+            <div class="card">
+            <div class="card-body">
+                <h3 class="card-title">Actions</h3>
+                <h5 class="card-subtitle mb-2">Without batching</h5>
+                <button class="btn btn-outline-secondary" @onclick="AddItems">Add items</button>
+                <button class="btn btn-outline-danger" @onclick="DeleteItems">Delete items from list</button>
+            </div>
+
+            <div class="card-body">
+                <h5 class="card-subtitle mb-2">With batching</h5>
+                <button class="btn btn-outline-primary" @onclick="AddItemsUsingBatch">Add items with batch</button>
+                <button class="btn btn-outline-danger" @onclick="DeleteItemsWithBatch">Delete items from list</button>
+            </div>
+        </div>
+    </div>
+    }
+</div>
+
+
+@if(Finished)
+{
+    @if(Deleted.HasValue)
+    {
+        <h3 class="text-center">
+            Finished deleting @Deleted.Value items in @TotalMilliseconds?.ToString()ms </h3>
+    } else
+    {
+        <h3 class="text-center">Finished adding @NumberOfItems items in @TotalMilliseconds?.ToString()ms</h3>
+    }
+    
+}
+
+
+@code {
+    private int? NumberOfItems { get; set; } = 10;
+    private string? ListName { get; set; } = "BlazorExplorer";
+    private string? ListId { get; set; }
+
+    private long? TotalMilliseconds { get; set; }
+    private bool Finished { get; set; } = false;
+    private int? Deleted { get; set; }
+
+    private System.Diagnostics.Stopwatch stopwatch = new System.Diagnostics.Stopwatch();
+
+    private async Task CreateList()
+    {
+        try
+        {
+
+
+            var list = await GraphServiceClient.Me.Todo.Lists.PostAsync(new TodoTaskList
+                {
+                    DisplayName = ListName
+                });
+            ListId = list.Id;
+        } catch (Exception e)
+        {
+            Console.WriteLine(e.Message);
+        }
+    }
+
+    private async Task LoadListId()
+    {
+        var lists = await GraphServiceClient.Me.Todo.Lists.GetAsync();
+        foreach(var list in lists.Value)
+        {
+            if (list.DisplayName == ListName)
+            {
+                ListId = list.Id;
+                break;
+            }
+        }
+    }
+
+    private async Task AddItems()
+    {
+        Finished = false;
+        stopwatch.Reset();
+        stopwatch.Stop();
+        Deleted = null;
+        try
+        {
+            var items = GenerateItems(NumberOfItems ?? 10);
+            stopwatch.Start();
+            foreach(var i in items)
+            {
+                await GraphServiceClient.Me.Todo.Lists[ListId].Tasks.PostAsync(i);
+            }
+            stopwatch.Stop();
+            TotalMilliseconds = stopwatch.ElapsedMilliseconds;
+            Finished = true;
+        } catch (Exception ex)
+        {
+            Console.WriteLine(ex.Message);
+        }
+
+
+
+    }
+
+    private async Task AddItemsUsingBatch()
+    {
+        Finished = false;
+        stopwatch.Reset();
+        stopwatch.Stop();
+        Deleted = null;
+        try
+        {
+            var items = GenerateItems(NumberOfItems ?? 10);
+            // Sadly Tasks don't support the 20 tasks per batch just yet. They are working on it. Using 4 for now.
+            var batch = new BatchRequestContentCollection(GraphServiceClient, 4);
+            stopwatch.Start();
+            foreach (var i in items)
+            {
+                await batch.AddBatchRequestStepAsync(GraphServiceClient.Me.Todo.Lists[ListId].Tasks.ToPostRequestInformation(i));
+            }
+            await GraphServiceClient.Batch.PostAsync(batch);
+            stopwatch.Stop();
+            TotalMilliseconds = stopwatch.ElapsedMilliseconds;
+            Finished = true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(ex.Message);
+        }
+
+    }
+
+    private async Task DeleteItems()
+    {
+        Finished = false;
+        stopwatch.Reset();
+        stopwatch.Stop();
+
+        var items = await GetItemsFromList(ListId);
+        Deleted = items.Count();
+        stopwatch.Start();
+        foreach(var i in items) {
+            await GraphServiceClient.Me.Todo.Lists[ListId].Tasks[i.Id].DeleteAsync();
+        }
+
+        stopwatch.Stop();
+        TotalMilliseconds = stopwatch.ElapsedMilliseconds;
+        Finished = true;
+
+    }
+
+    private async Task DeleteItemsWithBatch()
+    {
+        Finished = false;
+        stopwatch.Reset();
+        stopwatch.Stop();
+
+        var items = await GetItemsFromList(ListId);
+        Deleted = items.Count();
+        stopwatch.Start();
+        var batch = new BatchRequestContentCollection(GraphServiceClient, 4);
+        foreach (var i in items)
+        {
+            await batch.AddBatchRequestStepAsync(GraphServiceClient.Me.Todo.Lists[ListId].Tasks[i.Id].ToDeleteRequestInformation());
+        }
+        await GraphServiceClient.Batch.PostAsync(batch);
+        stopwatch.Stop();
+        TotalMilliseconds = stopwatch.ElapsedMilliseconds;
+        Finished = true;
+
+    }
+
+    private static IEnumerable<TodoTask> GenerateItems(int number)
+    {
+        var results = new List<TodoTask>();
+        var start = DateTime.Now;
+        for (int i = 0; i < number; i++)
+        {
+            results.Add(new TodoTask
+                {
+                    Title = $"Test task {i}",
+                    Body = new ItemBody {Content = $"Task created at: {start:yyyy-MM-dd HH:mm}"}
+                });
+            //results.Add(new To)
+            //results.Add(new Event
+            //    {
+            //        Body = new ItemBody { Content = "Test event created by batch explorer" },
+            //        Subject = $"Test event {i}",
+            //        Categories = new List<string> { category },
+            //        Start = new DateTimeTimeZone
+            //        {
+            //            DateTime = start.AddHours(i).ToString("s"),
+            //            TimeZone = "Etc/GMT"
+            //        },
+            //        End = new DateTimeTimeZone
+            //        {
+            //            DateTime = start.AddHours(i + 1).ToString("s"),
+            //            TimeZone = "Etc/GMT"
+            //        },
+            //    });
+        }
+        return results;
+    }
+
+    private async Task<IEnumerable<TodoTask>> GetItemsFromList(string listId)
+    {
+        var tasksResult = await GraphServiceClient.Me.Todo.Lists[listId].Tasks.GetAsync(request =>
+        {
+            request.QueryParameters.Top = 100;
+        });
+
+        return tasksResult.Value;
+    }
+}

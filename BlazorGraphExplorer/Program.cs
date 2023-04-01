@@ -14,6 +14,8 @@ builder.Services.AddMsalAuthentication(options =>
 {
     builder.Configuration.Bind("AzureAd", options.ProviderOptions.Authentication);
     options.ProviderOptions.DefaultAccessTokenScopes.Add("https://graph.microsoft.com/User.Read");
+    //options.ProviderOptions.DefaultAccessTokenScopes.Add("https://graph.microsoft.com/Calendars.ReadWrite");
+    options.ProviderOptions.DefaultAccessTokenScopes.Add("https://graph.microsoft.com/Tasks.ReadWrite");
 });
 
 await builder.Build().RunAsync();
