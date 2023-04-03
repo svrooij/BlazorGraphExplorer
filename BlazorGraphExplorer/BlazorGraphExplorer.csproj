@@ -6,10 +6,12 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <ServiceWorkerAssetsManifest>service-worker-assets.js</ServiceWorkerAssetsManifest>
     <UserSecretsId>216d4b33-26ae-4403-af5a-81a544ad1f10</UserSecretsId>
-       <RunAOTCompilation>false</RunAOTCompilation>
-    <WasmEmitSymbolMap>true</WasmEmitSymbolMap>
+    <RunAOTCompilation>false</RunAOTCompilation>
+    <WasmEmitSymbolMap>false</WasmEmitSymbolMap>
     <WasmNativeStrip>false</WasmNativeStrip>
     <PublishTrimmed>false</PublishTrimmed>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <BlazorEnableTimeZoneSupport>false</BlazorEnableTimeZoneSupport>
   </PropertyGroup>
 
   <ItemGroup>
