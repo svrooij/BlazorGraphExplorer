@@ -19,8 +19,8 @@ jobs:
         with:
           submodules: true
       - name: Build web assembly
-        run: dotnet publish --output dist
-      - name: Build And Deploy
+        run: dotnet publish ./BlazorGraphExplorer/BlazorGraphExplorer.csproj --output dist
+      - name: Deploy to SWA
         id: builddeploy
         uses: Azure/static-web-apps-deploy@v1
         with:
