@@ -363,3 +363,4 @@ MigrationBackup/
 FodyWeavers.xsd
 
 BlazorGraphExplorer/Pages/Calendar.razor
+dist
